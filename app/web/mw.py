@@ -1,6 +1,7 @@
-from aiohttp import web
-from typing import Callable
 import traceback
+from typing import Callable
+
+from aiohttp import web
 
 __all__ = ("setup_middlewares",)
 
@@ -14,10 +15,7 @@ async def error_middleware(request: web.Request, handler: Callable):
     except Exception as e:
         print(f"Error processing request: {e}")
         traceback.print_exc()
-        return web.json_response(
-            {'error': str(e)},
-            status=500
-        )
+        return web.json_response({"error": str(e)}, status=500)
 
 
 def setup_middlewares(app: web.Application):
