@@ -1,10 +1,24 @@
 debug: true
+
 web:
   host: 127.0.0.1
-  port: 8000
+  port: 8080
 
-sentry:
-  dsn:
-  env: dev
+bot:
+  token: ${BOT_TOKEN}
+
+database:
+  host: ${DB_HOST:localhost}
+  port: ${DB_PORT:5432}
+  database: ${DB_NAME:svoya_igra}
+  user: ${DB_USER:postgres}
+  password: ${DB_PASSWORD}
+
+admin:
+  email: ${ADMIN_EMAIL}
+  password: ${ADMIN_PASSWORD}
+
+session:
+  key: ${SESSION_KEY:super-secret-session-key-change-me}
 
 store: {}
