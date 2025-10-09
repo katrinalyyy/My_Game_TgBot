@@ -1,4 +1,5 @@
 import os
+
 import yaml
 from aiohttp.web import Application as AiohttpApplication
 
@@ -16,7 +17,7 @@ class Application(AiohttpApplication):
     database = None
 
 
-def setup_app(config_path: str = "etc/config.yaml", env_vars: dict = None) -> Application:
+def setup_app(config_path: str = "etc/config.yaml", env_vars: dict | None = None) -> Application:
     env_vars = env_vars or {}
     
     with open(config_path, "r") as f:

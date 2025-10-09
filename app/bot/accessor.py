@@ -21,9 +21,8 @@ class TelegramBotAccessor:
             await self.session.close()
             print("Telegram Bot API disconnected")
 
-
     async def _make_request(self, method: str, **params) -> dict[str, Any]:
-        url = f"{self.base_url}/{method}"  # у меня не получилось применить urljoin 
+        url = f"{self.base_url}/{method}"  # простой вариант работает лучше
         
         if method == "getMe":
             async with self.session.get(url) as response:
@@ -37,9 +36,6 @@ class TelegramBotAccessor:
             return {}
 
         return result.get("result", {})
-
-
-
 
     async def get_updates(
         self, offset: int | None = None, timeout: int = 30

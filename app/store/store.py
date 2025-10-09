@@ -1,5 +1,5 @@
+import os
 from typing import TYPE_CHECKING
-import os 
 
 from aiohttp.web import Application
 
