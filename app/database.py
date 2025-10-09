@@ -1,71 +1,62 @@
-'''попытка использовать асинхронный драйвер asyncpg бд вместо синхронного (работает)'''
-
-import asyncio
-from collections.abc import AsyncGenerator
-
-import asyncpg
-from aiohttp import web
-
-
-class Database:
-    def __init__(self, dsn: str):
-        self.dsn = dsn
-        self.pool: asyncpg.Pool | None = None
-
-    async def init_pool(self) -> None:
-        # инициализация пула соединений
-        self.pool = await asyncpg.create_pool(
-            self.dsn,
-            min_size=1,
-            max_size=10,
-            command_timeout=60
-        )
-
-    async def close_pool(self) -> None:
-        # его закрытие
-        if self.pool:
-            await self.pool.close()
-
-    async def get_connection(self) -> AsyncGenerator[asyncpg.Connection, None]:
-        # получение из пула
-        if not self.pool:
-            raise RuntimeError("Database pool not initialized")
-        
-        async with self.pool.acquire() as connection:
-            yield connection
-
-    async def execute(self, query: str, *args) -> str:
-        # выполнение запроса
-        async with self.get_connection() as conn:
-            return await conn.execute(query, *args)
-
-    async def fetch(self, query: str, *args) -> list[asyncpg.Record]:
-        # все данные
-        async with self.get_connection() as conn:
-            return await conn.fetch(query, *args)
-
-    async def fetchrow(self, query: str, *args) -> asyncpg.Record | None:
-        # одна строка
-        async with self.get_connection() as conn:
-            return await conn.fetchrow(query, *args)
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker
+)
+from sqlalchemy.pool import NullPool
+from typing import AsyncGenerator
 
 
-def get_database(app: web.Application) -> Database:
-    return app["database"]
-
-
-def setup_database(app: web.Application) -> None:
-    config = app.config["database"]
-    dsn = f"postgresql://{config['user']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+class Database:    
+    def __init__(self, app):
+        self.app = app
+        self._engine = None
+        self._session_maker = None
     
-    database = Database(dsn)
-    app["database"] = database
+    def setup(self):
+        db_config = self.app.config['database']
+        database_url = (
+            f"postgresql+asyncpg://{db_config['user']}:{db_config['password']}"
+            f"@{db_config['host']}:{db_config['port']}/{db_config['database']}"
+        )
+        
+        self._engine = create_async_engine(
+            database_url,
+            echo=self.app.config.get('debug', False),  
+            poolclass=NullPool, 
+        )
+        
+        self._session_maker = async_sessionmaker(
+            self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+        
+        print(f"✅ Database connected: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+    
+    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
+        """Получить сессию БД"""
+        session = self._session_maker()
+        try:
+            yield session
+        finally:
+            await session.close()
+    
+    async def close(self):
+        """Закрыть подключение"""
+        if self._engine:
+            await self._engine.dispose()
+            print("✅ Database connection closed")
 
-    async def init_db(app: web.Application) -> None:
-        await database.init_pool()
 
-    async def close_db(app: web.Application) -> None:
-        await database.close_pool()
+def setup_database(app):
+    """Инициализация БД в приложении"""
+    db = Database(app)
+    db.setup()
+    app['database'] = db
+    return app
 
-    app.on_startup.append(init_db)
-    app.on_cleanup.append(close_db)
+
+def get_database(app) -> Database:
+    """Получить объект БД из приложения"""
+    return app.get('database')
