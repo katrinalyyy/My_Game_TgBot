@@ -103,15 +103,9 @@ extend-ignore = [
     "PLR2004",  # https://docs.astral.sh/ruff/rules/magic-value-comparison – много ложных срабатываний
     "PLR0904",  # https://docs.astral.sh/ruff/rules/too-many-public-methods – неактуально для нашего аксессорного подхода
     
-    # Временно отключаем для разработки
+    # Оставляем только print statements для отладки
     "T201",     # print statements - разрешаем для отладки
-    "UP006",    # Use dict instead of Dict - оставляем старый стиль
-    "UP007",    # Use X | Y for type annotations - оставляем старый стиль
-    "UP035",    # typing.Dict/List deprecated - оставляем старый стиль
-    "F401",     # imported but unused - разрешаем неиспользуемые импорты
-    "F541",     # f-string without placeholders - разрешаем
-    "RET505",   # Unnecessary elif/else after return - разрешаем
-    "RUF029",   # Function declared async but doesn't await - разрешаем
+    "F401",     # imported but unused - разрешаем для TYPE_CHECKING
     "PLR0917",  # https://docs.astral.sh/ruff/rules/too-many-positional – может оказатся слишком жесткис
     "PLR6201",  # https://docs.astral.sh/ruff/rules/literal-membership – не всегда имеет смысл использовать set
     "PLR6301",  # https://docs.astral.sh/ruff/rules/no-self-use – неактуально для нашего аксессорного подхода

@@ -2,14 +2,14 @@ debug: true
 
 web:
   host: 127.0.0.1
-  port: 8080
+  port: 8085
 
 bot:
   token: ${BOT_TOKEN}
 
 database:
   host: ${DB_HOST:localhost}
-  port: ${DB_PORT:5432}
+  port: ${DB_PORT:5433}
   database: ${DB_NAME:svoya_igra}
   user: ${DB_USER:postgres}
   password: ${DB_PASSWORD}

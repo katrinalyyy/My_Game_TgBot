@@ -1,6 +1,5 @@
 # Polling + обработка
 import asyncio
-from typing import Optional
 
 from app.bot.accessor import TelegramBotAccessor
 
@@ -9,8 +8,8 @@ class BotManager:
     def __init__(self, bot_accessor: TelegramBotAccessor):
         self.bot = bot_accessor
         self.is_running = False
-        self.polling_task: Optional[asyncio.Task] = None
-        self.offset: Optional[int] = None
+        self.polling_task: asyncio.Task | None = None
+        self.offset: int | None = None
 
     async def start(self):
         if self.is_running:
@@ -57,7 +56,7 @@ class BotManager:
                 break
             except Exception as e:
                 print(f"Polling error: {e}")
-                await asyncio.sleep(5)
+                
 
     async def _handle_update(self, update: dict):
         # обработка текстовых сообщений

@@ -1,8 +1,8 @@
 import os
-
 import yaml
 from aiohttp.web import Application as AiohttpApplication
 
+from app.database import setup_database
 from app.store.store import Store
 from app.web.mw import setup_middlewares
 from app.web.routes import setup_routes
@@ -16,19 +16,22 @@ class Application(AiohttpApplication):
     database = None
 
 
-def setup_app(config_path: str = "etc/config.yaml") -> Application:
+def setup_app(config_path: str = "etc/config.yaml", env_vars: dict = None) -> Application:
+    env_vars = env_vars or {}
+    
     with open(config_path, "r") as f:
         raw_config = yaml.safe_load(f)
 
-    config = _substitute_env_vars(raw_config)
+    # подстановка переменных окружения
+    config = _substitute_env_vars(raw_config, env_vars)
 
     app = Application()
     app.config = config
-
+    
+    setup_database(app)
     app.store = Store(app)
 
     setup_middlewares(app)
-
     setup_routes(app)
 
     app.on_startup.append(on_startup)
@@ -36,41 +39,28 @@ def setup_app(config_path: str = "etc/config.yaml") -> Application:
 
     return app
 
-
-def _substitute_env_vars(config: dict) -> dict:
-    # подстановка переменных окружения
+# подстановка переменных окружения
+def _substitute_env_vars(config: dict, env_vars: dict) -> dict:
     if isinstance(config, dict):
-        return {k: _substitute_env_vars(v) for k, v in config.items()}
-    elif isinstance(config, list):
-        return [_substitute_env_vars(item) for item in config]
-    elif (
-        isinstance(config, str)
-        and config.startswith("${")
-        and config.endswith("}")
-    ):
-        # тк формат ${VAR_NAME:default_value}
+        return {k: _substitute_env_vars(v, env_vars) for k, v in config.items()}
+    if isinstance(config, list):
+        return [_substitute_env_vars(item, env_vars) for item in config]
+    if isinstance(config, str) and config.startswith("${") and config.endswith("}"):
         var_expr = config[2:-1]
         if ":" in var_expr:
             var_name, default = var_expr.split(":", 1)
-            return os.getenv(var_name, default)
-        else:
-            return os.getenv(var_expr, config)
+            return env_vars.get(var_name, os.getenv(var_name, default))
+        return env_vars.get(var_expr, os.getenv(var_expr, config))
     return config
-
 
 # запуск бота
 async def on_startup(app: Application):
     print("Starting application...")
-
-    # к БД
-    # await app.store.database.connect()
-
     await app.store.connect()
     await app.store.bot_manager.start()
     print("Application started!")
 
 
-# если стопаем бота
 async def on_cleanup(app: Application):
     print("Shutting down application...")
     await app.store.bot_manager.stop()
