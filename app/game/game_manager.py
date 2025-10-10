@@ -168,8 +168,19 @@ class GameManager:
         # выбираю случайного первого игрока
         first_player = random.choice(participants)
         
-        # обновляю состояние игры
+        # обновляю состояние игры и устанавливаю первого игрока
         await self.game_accessor.update_game_state(game.id, GameState.GAME_ACTIVE.value)
+        
+        # устанавливаю первого игрока в metadata
+        await self.game_accessor.update_game_metadata(
+            game.id,
+            {
+                "current_player_id": first_player.user_telegram_id,
+                "current_question_id": None,
+                "turn_start_time": None,
+                "is_race_mode": False
+            }
+        )
         
         await self.game_accessor.log_event(
             game_session_id=game.id,
@@ -232,7 +243,8 @@ class GameManager:
         self,
         chat_id: int,
         category: str,
-        difficulty: int
+        difficulty: int,
+        selecting_player_id: int
     ) -> Dict:
         game = await self.game_accessor.get_active_game_in_chat(chat_id)
         if not game:
@@ -264,15 +276,21 @@ class GameManager:
             event_data={
                 "question_id": question.id,
                 "category": category,
-                "difficulty": difficulty
+                "difficulty": difficulty,
+                "selecting_player_id": selecting_player_id
             }
         )
         
-        # сохраняю информацию о выбранном вопросе в metadata игры
-        print(f"DEBUG: Saving question ID {question.id} for game {game.id}")
+        # сохраняю информацию о выбранном вопросе и текущем игроке в metadata игры
+        print(f"DEBUG: Saving question ID {question.id} for game {game.id}, selecting player: {selecting_player_id}")
         await self.game_accessor.update_game_metadata(
             game.id,
-            {"current_question_id": question.id}
+            {
+                "current_question_id": question.id,
+                "current_player_id": selecting_player_id,
+                "turn_start_time": None,  # будет установлено в боте
+                "is_race_mode": False
+            }
         )
         
         return {
@@ -313,6 +331,14 @@ class GameManager:
         if not current_question_id:
             return {"success": False, "error": "Не выбран вопрос для ответа"}
         
+        # получаю информацию о текущем игроке и режиме
+        current_player_id = game.game_metadata.get("current_player_id")
+        is_race_mode = game.game_metadata.get("is_race_mode", False)
+        
+        # проверяю, может ли игрок отвечать
+        if not is_race_mode and current_player_id != player_telegram_id:
+            return {"success": False, "error": "Сейчас не ваш ход"}
+        
         # получаю вопрос
         question = await self.question_accessor.get_question_by_id(current_question_id)
         if not question:
@@ -322,6 +348,8 @@ class GameManager:
         print(f"DEBUG: Question text: {question.question_text}")
         print(f"DEBUG: Correct answer: {question.answer_text}")
         print(f"DEBUG: User answer: {answer_text}")
+        print(f"DEBUG: Current player: {current_player_id}, Answering player: {player_telegram_id}")
+        print(f"DEBUG: Race mode: {is_race_mode}")
         
         # чек ответ 
         is_correct = answer_text.strip().lower() == question.answer_text.strip().lower()
@@ -351,12 +379,34 @@ class GameManager:
                 difficulty=board_entry.difficulty,
                 answered_by_telegram_id=player_telegram_id
             )
-        
-        # очищаю текущий вопрос из metadata
-        await self.game_accessor.update_game_metadata(
-            game.id,
-            {"current_question_id": None}
-        )
+            
+            # очищаю текущий вопрос из metadata
+            await self.game_accessor.update_game_metadata(
+                game.id,
+                {
+                    "current_question_id": None,
+                    "current_player_id": None,
+                    "turn_start_time": None,
+                    "is_race_mode": False
+                }
+            )
+            
+            # определяю следующего игрока для выбора вопроса
+            await self._set_next_player_for_question_selection(chat_id)
+        else:
+            # неправильный ответ - переходим в режим гонки или передаем ход
+            if not is_race_mode:
+                # первый неправильный ответ - включаем режим гонки
+                await self.game_accessor.update_game_metadata(
+                    game.id,
+                    {
+                        "is_race_mode": True,
+                        "race_start_time": None  # будет установлено в боте
+                    }
+                )
+            else:
+                # неправильный ответ в режиме гонки - передаем ход случайному игроку
+                await self._set_random_player_for_question_selection(chat_id)
         
         await self.game_accessor.log_event(
             game_session_id=game.id,
@@ -376,7 +426,96 @@ class GameManager:
             "success": True,
             "is_correct": is_correct,
             "correct_answer": question.answer_text,
-            "score_change": score_change
+            "score_change": score_change,
+            "is_race_mode": game.game_metadata.get("is_race_mode", False),
+            "current_player_id": game.game_metadata.get("current_player_id")
+        }
+    
+    async def _set_next_player_for_question_selection(self, chat_id: int):
+        """Установить следующего игрока для выбора вопроса"""
+        game = await self.game_accessor.get_active_game_in_chat(chat_id)
+        if not game:
+            return
+        
+        participants = await self.game_accessor.get_participants(game.id)
+        if not participants:
+            return
+        
+        # Простая логика - берем следующего игрока по порядку
+        # В будущем можно улучшить (по очкам, случайно и т.д.)
+        current_player_id = game.game_metadata.get("current_player_id")
+        
+        # Если нет текущего игрока, берем первого
+        if not current_player_id:
+            next_player_id = participants[0].user_telegram_id
+        else:
+            # Находим следующего игрока
+            current_index = None
+            for i, p in enumerate(participants):
+                if p.user_telegram_id == current_player_id:
+                    current_index = i
+                    break
+            
+            if current_index is not None:
+                next_index = (current_index + 1) % len(participants)
+                next_player_id = participants[next_index].user_telegram_id
+            else:
+                next_player_id = participants[0].user_telegram_id
+        
+        await self.game_accessor.update_game_metadata(
+            game.id,
+            {"current_player_id": next_player_id}
+        )
+    
+    async def _set_random_player_for_question_selection(self, chat_id: int):
+        """Установить случайного игрока для выбора вопроса"""
+        import random
+        
+        game = await self.game_accessor.get_active_game_in_chat(chat_id)
+        if not game:
+            return
+        
+        participants = await self.game_accessor.get_participants(game.id)
+        if not participants:
+            return
+        
+        # Выбираем случайного игрока
+        random_player = random.choice(participants)
+        
+        await self.game_accessor.update_game_metadata(
+            game.id,
+            {
+                "current_player_id": random_player.user_telegram_id,
+                "is_race_mode": False,
+                "race_start_time": None
+            }
+        )
+    
+    async def get_current_turn_info(self, chat_id: int) -> Dict:
+        """Получить информацию о текущем ходе"""
+        game = await self.game_accessor.get_active_game_in_chat(chat_id)
+        if not game:
+            return {"success": False, "error": "Нет активной игры"}
+        
+        current_player_id = game.game_metadata.get("current_player_id")
+        is_race_mode = game.game_metadata.get("is_race_mode", False)
+        turn_start_time = game.game_metadata.get("turn_start_time")
+        race_start_time = game.game_metadata.get("race_start_time")
+        
+        current_player = None
+        if current_player_id:
+            current_player = await self.user_accessor.get_user_by_telegram_id(current_player_id)
+        
+        return {
+            "success": True,
+            "current_player": {
+                "telegram_id": current_player.telegram_id if current_player else None,
+                "username": current_player.username if current_player else None,
+                "first_name": current_player.first_name if current_player else None
+            } if current_player else None,
+            "is_race_mode": is_race_mode,
+            "turn_start_time": turn_start_time,
+            "race_start_time": race_start_time
         }
     
     async def get_leaderboard(self, chat_id: int) -> Dict:
@@ -433,4 +572,66 @@ class GameManager:
         return {
             "success": True,
             "leaderboard": leaderboard
+        }
+    
+    async def get_leaderboard(self, chat_id: int) -> Dict:
+        """Получить таблицу лидеров"""
+        game = await self.game_accessor.get_active_game_in_chat(chat_id)
+        if not game:
+            return {"success": False, "error": "Нет активной игры"}
+        
+        participants = await self.game_accessor.get_participants(game.id)
+        leaderboard = []
+        
+        for participant in participants:
+            user = await self.user_accessor.get_user_by_telegram_id(participant.user_telegram_id)
+            leaderboard.append({
+                "telegram_id": participant.user_telegram_id,
+                "username": user.username if user else None,
+                "first_name": user.first_name if user else "Игрок",
+                "score": participant.score,
+                "turn_order": participant.turn_order
+            })
+        
+        # Сортируем по очкам
+        leaderboard.sort(key=lambda x: x["score"], reverse=True)
+        
+        return {
+            "success": True,
+            "leaderboard": leaderboard
+        }
+    
+    async def select_question(
+        self,
+        chat_id: int,
+        category: str,
+        difficulty: int,
+        selecting_player_id: int = None
+    ) -> Dict:
+        """Выбрать вопрос (для API)"""
+        game = await self.game_accessor.get_active_game_in_chat(chat_id)
+        if not game:
+            return {"success": False, "error": "Нет активной игры"}
+        
+        # Получаем случайный вопрос из категории
+        result = await self.question_accessor.get_random_question_by_category_and_difficulty(
+            category, difficulty
+        )
+        
+        if not result["success"]:
+            return result
+        
+        question = result["question"]
+        
+        # Сохраняем информацию о выбранном вопросе
+        await self.save_current_question(chat_id, question.id)
+        
+        return {
+            "success": True,
+            "question": {
+                "id": question.id,
+                "text": question.question_text,
+                "category": category,
+                "difficulty": difficulty
+            }
         }

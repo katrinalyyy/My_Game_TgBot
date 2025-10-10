@@ -2,6 +2,7 @@ import os
 
 import yaml
 from aiohttp.web import Application as AiohttpApplication
+from aiohttp_apispec import setup_aiohttp_apispec
 
 from app.database import setup_database
 from app.store.store import Store
@@ -34,6 +35,18 @@ def setup_app(config_path: str = "etc/config.yaml", env_vars: dict | None = None
 
     setup_middlewares(app)
     setup_routes(app)
+    
+    # Настройка Swagger документации
+    setup_aiohttp_apispec(
+        app=app,
+        title="My Game Telegram Bot API",
+        version="v1",
+        url="/api/docs/swagger.json",
+        swagger_path="/api/docs",
+        static_path="/api/docs/static",
+        request_data_name="json",
+        in_place=True
+    )
 
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)

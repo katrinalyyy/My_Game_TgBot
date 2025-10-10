@@ -1,6 +1,6 @@
-from typing import Optional, List
-from datetime import datetime
-from sqlalchemy import select, and_
+from typing import Optional, List, Tuple
+from datetime import datetime, timedelta
+from sqlalchemy import select, and_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -147,3 +147,86 @@ class GameAccessor:
         )
         self.session.add(event)
         await self.session.commit()
+    
+    async def get_games_paginated(
+        self, page: int = 1, limit: int = 20, active_only: bool = False
+    ) -> Tuple[List[GameSession], int]:
+        """Получить игры с пагинацией"""
+        offset = (page - 1) * limit
+        
+        # Базовый запрос
+        query = select(GameSession)
+        
+        if active_only:
+            query = query.where(GameSession.is_active == True)
+        
+        # Получаем игры
+        result = await self.session.execute(
+            query.order_by(desc(GameSession.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+        games = result.scalars().all()
+        
+        # Получаем общее количество
+        count_query = select(func.count(GameSession.id))
+        if active_only:
+            count_query = count_query.where(GameSession.is_active == True)
+        
+        count_result = await self.session.execute(count_query)
+        total = count_result.scalar()
+        
+        return games, total
+    
+    async def get_games_count(self) -> int:
+        """Получить общее количество игр"""
+        result = await self.session.execute(
+            select(func.count(GameSession.id))
+        )
+        return result.scalar()
+    
+    async def get_active_games_count(self) -> int:
+        """Получить количество активных игр"""
+        result = await self.session.execute(
+            select(func.count(GameSession.id)).where(GameSession.is_active == True)
+        )
+        return result.scalar()
+    
+    async def cleanup_old_games(self, days_old: int = 30) -> int:
+        """Удалить старые завершенные игры"""
+        cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+        
+        # Находим старые завершенные игры
+        result = await self.session.execute(
+            select(GameSession.id).where(
+                and_(
+                    GameSession.is_active == False,
+                    GameSession.finished_at < cutoff_date
+                )
+            )
+        )
+        old_game_ids = [row[0] for row in result.fetchall()]
+        
+        if not old_game_ids:
+            return 0
+        
+        # Удаляем связанные записи (события, участников, доску)
+        from sqlalchemy import delete
+        
+        await self.session.execute(
+            delete(GameEvent).where(GameEvent.game_session_id.in_(old_game_ids))
+        )
+        await self.session.execute(
+            delete(Participant).where(Participant.game_session_id.in_(old_game_ids))
+        )
+        await self.session.execute(
+            delete(GameBoard).where(GameBoard.game_session_id.in_(old_game_ids))
+        )
+        
+        # Удаляем сами игры
+        await self.session.execute(
+            delete(GameSession).where(GameSession.id.in_(old_game_ids))
+        )
+        
+        await self.session.commit()
+        return len(old_game_ids)

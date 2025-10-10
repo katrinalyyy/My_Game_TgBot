@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict
 import random
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.store.database.models import Category, Question, GameBoard
@@ -178,3 +178,114 @@ class QuestionAccessor:
         await self.session.commit()
         await self.session.refresh(question)
         return question
+    
+    async def create_category(self, name: str, description: Optional[str] = None) -> Category:
+        """Создать новую категорию"""
+        category = Category(
+            name=name,
+            description=description
+        )
+        self.session.add(category)
+        await self.session.commit()
+        await self.session.refresh(category)
+        return category
+    
+    async def get_categories(self) -> List[Category]:
+        """Получить все категории"""
+        result = await self.session.execute(
+            select(Category).order_by(Category.name)
+        )
+        return list(result.scalars().all())
+    
+    async def get_questions_paginated(
+        self,
+        category_id: Optional[int] = None,
+        difficulty: Optional[int] = None,
+        page: int = 1,
+        limit: int = 20
+    ) -> Tuple[List[Question], int]:
+        """Получить вопросы с пагинацией и фильтрацией"""
+        offset = (page - 1) * limit
+        
+        # Базовый запрос
+        query = select(Question)
+        
+        # Добавляем фильтры
+        conditions = []
+        if category_id:
+            conditions.append(Question.category_id == category_id)
+        if difficulty:
+            conditions.append(Question.difficulty == difficulty)
+        
+        if conditions:
+            query = query.where(and_(*conditions))
+        
+        # Получаем вопросы
+        result = await self.session.execute(
+            query.order_by(desc(Question.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+        questions = result.scalars().all()
+        
+        # Получаем общее количество
+        count_query = select(func.count(Question.id))
+        if conditions:
+            count_query = count_query.where(and_(*conditions))
+        
+        count_result = await self.session.execute(count_query)
+        total = count_result.scalar()
+        
+        return questions, total
+    
+    async def get_questions_count(self) -> int:
+        """Получить общее количество вопросов"""
+        result = await self.session.execute(
+            select(func.count(Question.id))
+        )
+        return result.scalar()
+    
+    async def get_categories_count(self) -> int:
+        """Получить общее количество категорий"""
+        result = await self.session.execute(
+            select(func.count(Category.id))
+        )
+        return result.scalar()
+    
+    async def get_questions_count_by_difficulty(self, difficulty: int) -> int:
+        """Получить количество вопросов по сложности"""
+        result = await self.session.execute(
+            select(func.count(Question.id)).where(Question.difficulty == difficulty)
+        )
+        return result.scalar()
+    
+    async def get_random_question_by_category_and_difficulty(
+        self, category_name: str, difficulty: int
+    ) -> Dict:
+        """Получить случайный вопрос по категории и сложности"""
+        # Сначала находим категорию
+        category_result = await self.session.execute(
+            select(Category).where(Category.name == category_name)
+        )
+        category = category_result.scalar_one_or_none()
+        
+        if not category:
+            return {"success": False, "error": f"Категория '{category_name}' не найдена"}
+        
+        # Получаем случайный вопрос
+        result = await self.session.execute(
+            select(Question).where(
+                and_(
+                    Question.category_id == category.id,
+                    Question.difficulty == difficulty,
+                    Question.is_active == True
+                )
+            )
+        )
+        questions = result.scalars().all()
+        
+        if not questions:
+            return {"success": False, "error": f"Нет вопросов в категории '{category_name}' сложности {difficulty}"}
+        
+        question = random.choice(questions)
+        return {"success": True, "question": question}

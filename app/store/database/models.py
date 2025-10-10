@@ -40,6 +40,19 @@ class User(Base):
 
     def __repr__(self):
         return f"<User {self.telegram_id} ({self.username})>"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "telegram_id": self.telegram_id,
+            "username": self.username,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "total_games": self.total_games,
+            "total_wins": self.total_wins,
+            "total_score": self.total_score
+        }
 
 
 class Category(Base):
@@ -59,6 +72,15 @@ class Category(Base):
 
     def __repr__(self):
         return f"<Category {self.name}>"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
 
 
 class Question(Base):
@@ -85,6 +107,18 @@ class Question(Base):
 
     def __repr__(self):
         return f"<Question {self.id}: {self.question_text[:30]}... ({self.difficulty})>"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "category_id": self.category_id,
+            "question_text": self.question_text,
+            "answer_text": self.answer_text,
+            "difficulty": self.difficulty,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "category": self.category.name if self.category else None
+        }
 
 
 class GameEvent(Base):
@@ -160,6 +194,21 @@ class GameSession(Base):
 
     def __repr__(self):
         return f"<GameSession {self.id} in chat {self.chat_id} ({self.state})>"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "chat_id": self.chat_id,
+            "host_telegram_id": self.host_telegram_id,
+            "state": self.state,
+            "current_player_telegram_id": self.current_player_telegram_id,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "is_active": self.is_active,
+            "game_metadata": self.game_metadata,
+            "total_participants": len(self.participants) if self.participants else 0,
+            "total_questions": len(self.board) if self.board else 0
+        }
 
 
 class Participant(Base):
