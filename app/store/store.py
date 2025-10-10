@@ -1,4 +1,3 @@
-import os
 from typing import TYPE_CHECKING
 
 from aiohttp.web import Application
@@ -18,14 +17,11 @@ class Store:
         from app.bot.manager import BotManager
 
         config = app.config
-        
-        # DEBUG
-        print(f"DEBUG in Store: config['bot']['token'] = {config.get('bot', {}).get('token', 'NOT_IN_CONFIG')[:20]}...")
-        print(f"DEBUG in Store: os.getenv('BOT_TOKEN') = {os.getenv('BOT_TOKEN', 'NOT_IN_ENV')[:20]}...")
 
         self.bot_accessor = TelegramBotAccessor(token=config["bot"]["token"])
-
         self.bot_manager = BotManager(self.bot_accessor)
+        
+        self.bot_manager.set_app(app)
 
         from app.database import get_database
         self.database = get_database(app)

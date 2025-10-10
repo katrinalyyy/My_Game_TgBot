@@ -2,10 +2,26 @@ from aiohttp import web
 
 from .schemas import ErrorResponseSchema, HealthCheckResponseSchema
 
-__all__ = ("health_check",)
+__all__ = ("api_info", "health_check")
 
 
-def health_check(request: web.Request):
+async def api_info(request: web.Request):
+    api_info = {
+        "name": "My Game Telegram Bot API",
+        "version": "v1",
+        "description": "REST API для игры 'Своя игра' в Telegram боте",
+        "endpoints": {
+            "health": "/health",
+            "games": "/api/v1/games",
+            "users": "/api/v1/users", 
+            "admin": "/api/v1/admin"
+        },
+        "documentation": "См. файлы API_README.md и API_EXAMPLES.md"
+    }
+    return web.json_response(api_info)
+
+
+async def health_check(request: web.Request):
     try:
         store = request.app.store
 
@@ -13,23 +29,17 @@ def health_check(request: web.Request):
         if store and hasattr(store, "bot_manager"):
             bot_running = store.bot_manager.is_running
 
-        # пофиксила - Marshmallow для сериализации ответа
-        schema = HealthCheckResponseSchema()
         response_data = {
             "status": "ok",
-            "bot_running": bot_running
+            "bot_running": bot_running,
+            "timestamp": "2025-01-09T10:30:00Z"
         }
         
-        return web.json_response(schema.dump(response_data))
+        return web.json_response(response_data)
     
     except Exception as e:
-        # пофиксила - обработка ошибок с Marshmallow
-        error_schema = ErrorResponseSchema()
         error_data = {
             "error": f"Internal server error: {e!s}",
             "code": 500
         }
-        return web.json_response(
-            error_schema.dump(error_data), 
-            status=500
-        )
+        return web.json_response(error_data, status=500)
